@@ -1,0 +1,15 @@
+# .gitignore
+
+# Ignore .env files
+.env
+
+# Ignore Python compiled files
+__pycache__/
+
+# Ignore Python distribution / build files
+dist/
+build/
+*.egg-info/
+
+# Ignore Python virtual environment files
+venv/
