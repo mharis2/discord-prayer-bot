@@ -7,7 +7,7 @@ from pytz import timezone
 import pytz
 import sqlite3
 import aiohttp
-import time
+
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD = os.getenv('DISCORD_GUILD')
@@ -48,10 +48,6 @@ async def on_ready():
         print(f"    Country: {config['country']}")
         print(f"    Timezone: {config['timezone']}")
 
-
-
-
-
 def get_db_connection():
     conn = sqlite3.connect('server_configs.db')
     return conn
@@ -65,6 +61,39 @@ async def on_guild_join(guild):
             default_channel = channel
             break
 
+    # Set up default server configuration.
+    # You might want to change these values to something more appropriate for your bot.
+    default_city = 'Edmonton'
+    default_country = 'Canada'
+    default_timezone = 'America/Edmonton'
+    
+    # Get a cursor
+    cur = db.cursor()
+
+    # Check if there are existing settings for this server
+    cur.execute("SELECT * FROM server_configs WHERE guild_id = ?", (guild.id,))
+    existing_settings = cur.fetchone()
+
+    # If there are existing settings for this server, do nothing
+    if existing_settings is not None:
+        pass
+    # If there are no existing settings for this server, insert new ones
+    else:
+        cur.execute("""
+            INSERT INTO server_configs (guild_id, channel_id, city, country, timezone)
+            VALUES (?, ?, ?, ?, ?)
+        """, (guild.id, default_channel.id, default_city, default_country, default_timezone))
+        db.commit()
+
+        # Also update the server_configs dictionary
+        server_configs[guild.id] = {
+            'guild_id': guild.id,
+            'channel_id': default_channel.id,
+            'city': default_city,
+            'country': default_country,
+            'timezone': default_timezone
+        }
+
     if default_channel is not None:
         await default_channel.send(
             "السلام عليكم ورحمة الله وبركاته \n\n"
@@ -76,19 +105,6 @@ async def on_guild_join(guild):
             "بسم الله الرحمن الرحيم "
         )
 
-    # Fetch server config for the new guild and add to the in-memory dictionary
-    cur = db.cursor()
-    cur.execute(f"SELECT * FROM server_configs WHERE guild_id = {guild.id}")
-    settings = cur.fetchone()
-    if settings is not None:
-        # The result will be a tuple. We need to convert it to a dictionary.
-        server_configs[guild.id] = {
-            'guild_id': settings[0],
-            'channel_id': settings[1],
-            'city': settings[2],
-            'country': settings[3],
-            'timezone': settings[4]
-        }
 
 
 async def fetch_prayer_times(city, country):
@@ -104,43 +120,39 @@ async def fetch_prayer_times(city, country):
 @tasks.loop(hours=24)
 async def get_prayer_times():
     for guild in bot.guilds:
-        try:
-            # Get the server-specific configuration
-            conn = get_db_connection()
-            cur = conn.cursor()
+        # Get the server-specific configuration
+        conn = get_db_connection()
+        cur = conn.cursor()
 
-            cur.execute("""
-                SELECT channel_id, city, country, timezone 
-                FROM server_configs 
-                WHERE guild_id = ?
-            """, (guild.id,))
+        cur.execute("""
+            SELECT channel_id, city, country, timezone 
+            FROM server_configs 
+            WHERE guild_id = ?
+        """, (guild.id,))
 
-            config = cur.fetchone()
+        config = cur.fetchone()
 
-            conn.close()
+        conn.close()
 
-            if config is None:
-                print(f"No config found for guild {guild.name}. Skipping...")
-                continue
+        if config is None:
+            print(f"No config found for guild {guild.name}. Skipping...")
+            continue
 
-            channel_id, city, country, tz_str = config
-            tz = timezone(tz_str)
+        channel_id, city, country, tz_str = config
+        tz = timezone(tz_str)
 
-            timings = await fetch_prayer_times(city, country)
-            current_date = datetime.date.today()
+        timings = await fetch_prayer_times(city, country)
+        current_date = datetime.date.today()
 
-            for prayer, time in timings.items():
-                if prayer in ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']:
-                    prayer_time = datetime.datetime.strptime(time, "%H:%M")
-                    prayer_time = prayer_time.replace(year=current_date.year, month=current_date.month, day=current_date.day)
-                    prayer_time = tz.localize(prayer_time)
+        for prayer, time in timings.items():
+            if prayer in ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']:
+                prayer_time = datetime.datetime.strptime(time, "%H:%M")
+                prayer_time = prayer_time.replace(year=current_date.year, month=current_date.month, day=current_date.day)
+                prayer_time = tz.localize(prayer_time)
 
-                    if prayer_time > datetime.datetime.now(tz):
-                        delay = (prayer_time - datetime.datetime.now(tz)).total_seconds()
-                        bot.loop.call_later(delay, bot.loop.create_task, announce_prayer(prayer, channel_id))
-        except Exception as e:
-            print(f"An error occurred while fetching prayer times for guild {guild.name}: {e}")
-
+                if prayer_time > datetime.datetime.now(tz):
+                    delay = (prayer_time - datetime.datetime.now(tz)).total_seconds()
+                    bot.loop.call_later(delay, bot.loop.create_task, announce_prayer(prayer, channel_id))
 
 
 
@@ -187,6 +199,7 @@ async def salah_help_command(ctx):
 - `!time_debug` - Displays the current time in Edmonton.
     """
     await ctx.send(help_message)
+
 
     
 @bot.command(name='test_schedule')
@@ -303,27 +316,15 @@ async def salah_setup_command(ctx, channel: discord.TextChannel = None, city: st
     # Get a cursor
     cur = db.cursor()
 
-    # Check if there are existing settings for this server
-    cur.execute("SELECT * FROM server_configs WHERE guild_id = ?", (ctx.guild.id,))
-    existing_settings = cur.fetchone()
-
-    # If there are existing settings for this server, update them
-    if existing_settings is not None:
-        cur.execute("""
-            UPDATE server_configs
-            SET channel_id = ?,
-                city = ?,
-                country = ?,
-                timezone = ?
-            WHERE guild_id = ?
-        """, (channel.id, city, country, timezone, ctx.guild.id))
-
-    # If there are no existing settings for this server, insert new ones
-    else:
-        cur.execute("""
-            INSERT INTO server_configs (guild_id, channel_id, city, country, timezone)
-            VALUES (?, ?, ?, ?, ?)
-        """, (ctx.guild.id, channel.id, city, country, timezone))
+    # Update the existing settings for this server
+    cur.execute("""
+        UPDATE server_configs
+        SET channel_id = ?,
+            city = ?,
+            country = ?,
+            timezone = ?
+        WHERE guild_id = ?
+    """, (channel.id, city, country, timezone, ctx.guild.id))
 
     db.commit()
 
@@ -335,6 +336,7 @@ async def salah_setup_command(ctx, channel: discord.TextChannel = None, city: st
     }
 
     await ctx.send("Bot has been set up successfully!")
+
 
 
 @salah.command(name='setup_modify')
@@ -376,4 +378,5 @@ def get_server_config(guild_id):
 
 
  
+
 bot.run(TOKEN)
