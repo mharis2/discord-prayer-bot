@@ -24,7 +24,7 @@ db = sqlite3.connect('server_configs.db')
 @bot.event
 async def on_ready():
     if not get_prayer_times.is_running():
-        get_prayer_times.start()  # Start the prayer time loop only if it is not already running
+        await get_prayer_times.start()  # This will run the task immediately and start the loop
     for guild in bot.guilds:
         cur = db.cursor()
         cur.execute(f"SELECT * FROM server_configs WHERE guild_id = {guild.id}")
