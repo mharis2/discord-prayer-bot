@@ -23,8 +23,7 @@ db = sqlite3.connect('server_configs.db')
 
 @bot.event
 async def on_ready():
-    if not get_prayer_times.is_running():
-        await get_prayer_times.start()  # This will run the task immediately and start the loop
+    print("on_ready called")
     for guild in bot.guilds:
         cur = db.cursor()
         cur.execute(f"SELECT * FROM server_configs WHERE guild_id = {guild.id}")
@@ -47,6 +46,13 @@ async def on_ready():
         print(f"    City: {config['city']}")
         print(f"    Country: {config['country']}")
         print(f"    Timezone: {config['timezone']}")
+
+    if not get_prayer_times.is_running():
+        await get_prayer_times.start()  # This will run the task immediately and start the loop
+    else:
+        print("get_prayer_times already running")
+
+
 
 def get_db_connection():
     conn = sqlite3.connect('server_configs.db')
@@ -316,15 +322,12 @@ async def salah_setup_command(ctx, channel: discord.TextChannel = None, city: st
     # Get a cursor
     cur = db.cursor()
 
-    # Update the existing settings for this server
+    # Insert or Replace the existing settings for this server
     cur.execute("""
-        UPDATE server_configs
-        SET channel_id = ?,
-            city = ?,
-            country = ?,
-            timezone = ?
-        WHERE guild_id = ?
-    """, (channel.id, city, country, timezone, ctx.guild.id))
+        INSERT OR REPLACE INTO server_configs
+        (guild_id, channel_id, city, country, timezone)
+        VALUES (?, ?, ?, ?, ?)
+    """, (ctx.guild.id, channel.id, city, country, timezone))
 
     db.commit()
 
@@ -336,6 +339,7 @@ async def salah_setup_command(ctx, channel: discord.TextChannel = None, city: st
     }
 
     await ctx.send("Bot has been set up successfully!")
+
 
 
 
