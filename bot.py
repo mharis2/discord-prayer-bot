@@ -7,6 +7,8 @@ from pytz import timezone
 import pytz
 import sqlite3
 import aiohttp
+from functools import partial
+
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
@@ -23,7 +25,7 @@ db = sqlite3.connect('server_configs.db')
 
 @bot.event
 async def on_ready():
-    print("on_ready called")
+    print("Bot has connected to Discord!")
     for guild in bot.guilds:
         cur = db.cursor()
         cur.execute(f"SELECT * FROM server_configs WHERE guild_id = {guild.id}")
@@ -48,9 +50,11 @@ async def on_ready():
         print(f"    Timezone: {config['timezone']}")
 
     if not get_prayer_times.is_running():
+        print("Starting get_prayer_times loop.")
         await get_prayer_times.start()  # This will run the task immediately and start the loop
     else:
-        print("get_prayer_times already running")
+        print("get_prayer_times loop already running.")
+
 
 
 
@@ -158,7 +162,8 @@ async def get_prayer_times():
 
                 if prayer_time > datetime.datetime.now(tz):
                     delay = (prayer_time - datetime.datetime.now(tz)).total_seconds()
-                    bot.loop.call_later(delay, bot.loop.create_task, announce_prayer(prayer, channel_id))
+                    partial_announce = partial(announce_prayer, prayer, channel_id)
+                    bot.loop.call_later(delay, bot.loop.create_task, partial_announce)
 
 
 
