@@ -133,37 +133,28 @@ async def get_prayer_times():
         # Get the server-specific configuration
         conn = get_db_connection()
         cur = conn.cursor()
-
         cur.execute("""
             SELECT channel_id, city, country, timezone 
             FROM server_configs 
             WHERE guild_id = ?
         """, (guild.id,))
-
         config = cur.fetchone()
-
         conn.close()
-
         if config is None:
             print(f"No config found for guild {guild.name}. Skipping...")
             continue
-
         channel_id, city, country, tz_str = config
         tz = timezone(tz_str)
-
         timings = await fetch_prayer_times(city, country)
         current_date = datetime.date.today()
-
         for prayer, time in timings.items():
             if prayer in ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']:
                 prayer_time = datetime.datetime.strptime(time, "%H:%M")
                 prayer_time = prayer_time.replace(year=current_date.year, month=current_date.month, day=current_date.day)
                 prayer_time = tz.localize(prayer_time)
-
                 if prayer_time > datetime.datetime.now(tz):
                     delay = (prayer_time - datetime.datetime.now(tz)).total_seconds()
-                    partial_announce = partial(announce_prayer, prayer, channel_id)
-                    bot.loop.call_later(delay, bot.loop.create_task, partial_announce)
+                    bot.loop.call_later(delay, bot.loop.create_task, announce_prayer(prayer, channel_id))
 
 
 
